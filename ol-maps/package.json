@@ -1,0 +1,84 @@
+{
+  "name": "ol-maps",
+  "displayName": "OL Maps",
+  "description": "VS Code custom editor for .yol files rendered with OpenLayers in a WebView.",
+  "version": "0.0.1",
+  "publisher": "local",
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "openlayers",
+          "title": "OL Maps",
+          "icon": "./icons/openlayers-activity.svg"
+        }
+      ]
+    },
+    "views": {
+      "openlayers": [
+        {
+          "id": "openlayers.yolFiles",
+          "name": "YOL Files"
+        }
+      ]
+    },
+    "languages": [
+      {
+        "id": "yol",
+        "aliases": [
+          "YOL",
+          "YAML OpenLayers"
+        ],
+        "extensions": [
+          ".yol"
+        ],
+        "icon": {
+          "light": "./icons/yol-light.svg",
+          "dark": "./icons/yol-dark.svg"
+        }
+      }
+    ],
+    "customEditors": [
+      {
+        "viewType": "olMaps.yolEditor",
+        "displayName": "YOL Map Editor",
+        "selector": [
+          {
+            "filenamePattern": "*.yol"
+          }
+        ],
+        "priority": "default"
+      }
+    ],
+    "commands": [
+      {
+        "command": "olMaps.addLayerFromUrl",
+        "title": "OL Maps: Add Layer From URL"
+      }
+    ]
+  },
+  "scripts": {
+    "compile": "npm run compile:extension && npm run compile:webview",
+    "compile:extension": "tsc -p ./",
+    "compile:webview": "tsc -p ./media/tsconfig.json",
+    "test": "npm run compile && node --test out/**/*.test.js",
+    "watch": "tsc -watch -p ./",
+    "vscode:prepublish": "npm run compile"
+  },
+  "dependencies": {
+    "js-yaml": "^4.1.0"
+  },
+  "devDependencies": {
+    "@types/js-yaml": "^4.0.9",
+    "@types/node": "^20.16.5",
+    "@types/vscode": "^1.90.0",
+    "typescript": "^5.6.2"
+  }
+}

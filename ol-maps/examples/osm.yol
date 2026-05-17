@@ -1,0 +1,10 @@
+view:
+  center:
+    - 1162016.752690594
+    - 9207261.122280577
+  zoom: 13.803383213989813
+  projection: EPSG:3857
+layers:
+  - type: tile
+    source:
+      type: osm
