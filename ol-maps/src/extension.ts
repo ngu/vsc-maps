@@ -4,31 +4,29 @@ import { DocumentEditor } from "./documentEditor";
 import { addLayerFromUrlCommand } from "./addLayerFromUrlCommand";
 import { OLFilesProvider } from "./olFilesProvider";
 import type {
+  WebviewDebugMessage,
   WebviewEdit,
-  WebviewInboundMessage,
+  WebviewEditMessage,
   WebviewPayload
 } from "./olModel";
 import { toOLModel } from "./olModel";
 
+const lastParseErrorByDocument = new Map<string, string>();
+
 export function activate(context: vscode.ExtensionContext): void {
+  const outputChannel = vscode.window.createOutputChannel("OL Maps");
+  context.subscriptions.push(outputChannel);
+
   const olFilesProvider = new OLFilesProvider();
   context.subscriptions.push(
-    vscode.window.registerTreeDataProvider("openlayers.yolFiles", olFilesProvider)
-  );
-
-  const yolWatcher = vscode.workspace.createFileSystemWatcher("**/*.yol");
-  context.subscriptions.push(
-    yolWatcher,
-    yolWatcher.onDidCreate(() => olFilesProvider.refresh()),
-    yolWatcher.onDidChange(() => olFilesProvider.refresh()),
-    yolWatcher.onDidDelete(() => olFilesProvider.refresh()),
-    vscode.workspace.onDidChangeWorkspaceFolders(() => olFilesProvider.refresh())
+    vscode.window.registerTreeDataProvider("openlayers.yolFiles", olFilesProvider),
+    olFilesProvider
   );
 
   context.subscriptions.push(
     vscode.window.registerCustomEditorProvider(
       "olMaps.yolEditor",
-      new YOLCustomEditorProvider(context),
+      new YOLCustomEditorProvider(context, outputChannel),
       {
         webviewOptions: { retainContextWhenHidden: true },
         supportsMultipleEditorsPerDocument: false
@@ -38,14 +36,19 @@ export function activate(context: vscode.ExtensionContext): void {
 
   context.subscriptions.push(
     vscode.commands.registerCommand("olMaps.addLayerFromUrl", async () => {
-      await addLayerFromUrlCommand(parseYolToPayload);
+      await addLayerFromUrlCommand((rawText) =>
+        parseYolToPayload(rawText, outputChannel, vscode.window.activeTextEditor?.document.uri)
+      );
     })
   );
 
 }
 
 class YOLCustomEditorProvider implements vscode.CustomTextEditorProvider {
-  constructor(private readonly extensionContext: vscode.ExtensionContext) {}
+  constructor(
+    private readonly extensionContext: vscode.ExtensionContext,
+    private readonly outputChannel: vscode.OutputChannel
+  ) {}
 
   async resolveCustomTextEditor(
     document: vscode.TextDocument,
@@ -54,7 +57,7 @@ class YOLCustomEditorProvider implements vscode.CustomTextEditorProvider {
   ): Promise<void> {
     const documentEditor = new DocumentEditor(document);
     const initialMessage = resolveVectorSourceUrls(
-      parseYolToPayload(document.getText()),
+      parseYolToPayload(document.getText(), this.outputChannel, document.uri),
       document,
       webviewPanel.webview
     );
@@ -77,7 +80,7 @@ class YOLCustomEditorProvider implements vscode.CustomTextEditorProvider {
     const updateWebview = (): void => {
       const rawText = document.getText();
       const message = resolveVectorSourceUrls(
-        parseYolToPayload(rawText),
+        parseYolToPayload(rawText, this.outputChannel, document.uri),
         document,
         webviewPanel.webview
       );
@@ -85,6 +88,13 @@ class YOLCustomEditorProvider implements vscode.CustomTextEditorProvider {
         undefined,
         (error: unknown) => {
           const errorText = error instanceof Error ? error.message : "Unknown webview postMessage error";
+          logOutputError(
+            this.outputChannel,
+            `Failed to post an update to the YOL webview: ${errorText}`,
+            document.uri,
+            error,
+            false
+          );
           void vscode.window.showWarningMessage(`YOL editor sync warning: ${errorText}`);
         }
       );
@@ -92,6 +102,11 @@ class YOLCustomEditorProvider implements vscode.CustomTextEditorProvider {
 
     const inboundSub = webviewPanel.webview.onDidReceiveMessage(
       async (message: unknown) => {
+        if (isDebugMessage(message)) {
+          logOutputDebug(this.outputChannel, message.message, document.uri);
+          return;
+        }
+
         if (!isEditMessage(message)) {
           return;
         }
@@ -106,6 +121,13 @@ class YOLCustomEditorProvider implements vscode.CustomTextEditorProvider {
           } satisfies WebviewPayload);
         } catch (error) {
           const errorText = error instanceof Error ? error.message : "Unknown replacement error";
+          logOutputError(
+            this.outputChannel,
+            `Failed to apply edits from the YOL webview: ${errorText}`,
+            document.uri,
+            error,
+            false
+          );
           await webviewPanel.webview.postMessage({
             type: "operationResult",
             ok: false,
@@ -177,10 +199,18 @@ function resolveVectorSourceUrls(
   };
 }
 
-function parseYolToPayload(rawText: string): WebviewPayload {
+function parseYolToPayload(
+  rawText: string,
+  outputChannel?: vscode.OutputChannel,
+  documentUri?: vscode.Uri
+): WebviewPayload {
   try {
     const parsed = yaml.load(rawText);
     const model = toOLModel(parsed);
+
+    if (documentUri) {
+      lastParseErrorByDocument.delete(documentUri.toString());
+    }
 
     return {
       type: "updateModel",
@@ -189,6 +219,22 @@ function parseYolToPayload(rawText: string): WebviewPayload {
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown parse error";
+    const documentKey = documentUri?.toString();
+    const shouldLog = documentKey === undefined || lastParseErrorByDocument.get(documentKey) !== message;
+
+    if (documentKey) {
+      lastParseErrorByDocument.set(documentKey, message);
+    }
+
+    if (outputChannel && shouldLog) {
+      logOutputError(
+        outputChannel,
+        `Failed to parse YOL document: ${message}`,
+        documentUri,
+        error,
+        true
+      );
+    }
 
     return {
       type: "parseError",
@@ -202,7 +248,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function isEditMessage(value: unknown): value is WebviewInboundMessage {
+function isEditMessage(value: unknown): value is WebviewEditMessage {
   if (!isRecord(value) || value.type !== "edit" || !("payload" in value)) {
     return false;
   }
@@ -213,6 +259,10 @@ function isEditMessage(value: unknown): value is WebviewInboundMessage {
   }
 
   return isReplaceEdit(payload);
+}
+
+function isDebugMessage(value: unknown): value is WebviewDebugMessage {
+  return isRecord(value) && value.type === "debug" && typeof value.message === "string";
 }
 
 function isReplaceEdit(value: unknown): value is WebviewEdit {
@@ -270,4 +320,34 @@ function getNonce(): string {
     text += chars.charAt(Math.floor(Math.random() * chars.length));
   }
   return text;
+}
+
+function logOutputError(
+  outputChannel: vscode.OutputChannel,
+  message: string,
+  documentUri?: vscode.Uri,
+  error?: unknown,
+  showChannel = false
+): void {
+  const prefix = `[${new Date().toISOString()}]`;
+  const location = documentUri ? ` ${documentUri.fsPath}` : "";
+  outputChannel.appendLine(`${prefix} ERROR${location} ${message}`);
+
+  if (error instanceof Error && error.stack) {
+    outputChannel.appendLine(error.stack);
+  }
+
+  if (showChannel) {
+    outputChannel.show(true);
+  }
+}
+
+function logOutputDebug(
+  outputChannel: vscode.OutputChannel,
+  message: string,
+  documentUri?: vscode.Uri
+): void {
+  const prefix = `[${new Date().toISOString()}]`;
+  const location = documentUri ? ` ${documentUri.fsPath}` : "";
+  outputChannel.appendLine(`${prefix} DEBUG${location} ${message}`);
 }

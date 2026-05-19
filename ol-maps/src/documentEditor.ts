@@ -1,11 +1,11 @@
 import * as vscode from "vscode";
-import type { WebviewEdit, WebviewInboundMessage } from "./olModel";
+import type { WebviewEdit, WebviewEditMessage } from "./olModel";
 import { applyReplacementToRawText } from "./documentEdits";
 
 export class DocumentEditor {
   constructor(private readonly document: vscode.TextDocument) {}
 
-  async applyEdit(message: WebviewInboundMessage): Promise<void> {
+  async applyEdit(message: WebviewEditMessage): Promise<void> {
     const docUri = this.document.uri;
     const liveDoc = await vscode.workspace.openTextDocument(docUri);
     let nextText = liveDoc.getText();

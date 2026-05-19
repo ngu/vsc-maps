@@ -1,0 +1,13 @@
+view:
+  center:
+    - 1161201.0371605817
+    - 9197306.182801053
+  zoom: 9.910049880656421
+  projection: EPSG:3857
+layers:
+  - type: tile
+    source:
+      type: wmts
+      url: https://cache.kartverket.no/v1/service
+      layer: topo
+      matrixSet: utm33n

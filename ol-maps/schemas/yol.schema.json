@@ -1,0 +1,239 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.com/schemas/yol.schema.json",
+  "title": "YOL Map Model",
+  "type": "object",
+  "required": ["view", "layers"],
+  "additionalProperties": false,
+  "properties": {
+    "projections": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["code", "def"],
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "type": "string",
+            "minLength": 1,
+            "description": "CRS code, for example EPSG:27700"
+          },
+          "def": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Proj4 definition string"
+          },
+          "extent": {
+            "type": "array",
+            "description": "Validity extent [minX, minY, maxX, maxY]",
+            "minItems": 4,
+            "maxItems": 4,
+            "items": {
+              "type": "number"
+            }
+          }
+        }
+      }
+    },
+    "view": {
+      "type": "object",
+      "required": ["center", "zoom"],
+      "additionalProperties": false,
+      "properties": {
+        "center": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": {
+            "type": "number"
+          }
+        },
+        "zoom": {
+          "type": "number"
+        },
+        "projection": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "layers": {
+      "type": "array",
+      "items": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": ["type", "source"],
+            "additionalProperties": false,
+            "properties": {
+              "type": {
+                "const": "tile"
+              },
+              "opacity": {
+                "type": "number"
+              },
+              "visible": {
+                "type": "boolean"
+              },
+              "source": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "required": ["type"],
+                    "additionalProperties": false,
+                    "properties": {
+                      "type": {
+                        "const": "osm"
+                      }
+                    }
+                  },
+                  {
+                    "type": "object",
+                    "required": ["type", "url"],
+                    "additionalProperties": false,
+                    "properties": {
+                      "type": {
+                        "const": "xyz"
+                      },
+                      "url": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "attributions": {
+                        "oneOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          }
+                        ]
+                      }
+                    }
+                  },
+                  {
+                    "type": "object",
+                    "required": ["type", "url", "layers"],
+                    "additionalProperties": false,
+                    "properties": {
+                      "type": {
+                        "const": "wms"
+                      },
+                      "url": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "layers": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "tiled": {
+                        "type": "boolean"
+                      },
+                      "format": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "attributions": {
+                        "oneOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          }
+                        ]
+                      }
+                    }
+                  },
+                  {
+                    "type": "object",
+                    "required": ["type", "url", "layer", "matrixSet"],
+                    "additionalProperties": false,
+                    "properties": {
+                      "type": {
+                        "const": "wmts"
+                      },
+                      "url": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "layer": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "matrixSet": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "style": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "format": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "tileMatrixPrefix": {
+                        "type": "string"
+                      },
+                      "attributions": {
+                        "oneOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          }
+                        ]
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": ["type", "source"],
+            "additionalProperties": false,
+            "properties": {
+              "type": {
+                "const": "vector"
+              },
+              "opacity": {
+                "type": "number"
+              },
+              "visible": {
+                "type": "boolean"
+              },
+              "source": {
+                "type": "object",
+                "required": ["type", "url"],
+                "additionalProperties": false,
+                "properties": {
+                  "type": {
+                    "enum": ["geojson", "topojson", "kml", "gml"]
+                  },
+                  "url": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                }
+              }
+            }
+          }
+        ]
+      }
+    }
+  }
+}

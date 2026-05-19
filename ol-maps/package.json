@@ -45,6 +45,14 @@
         }
       }
     ],
+    "configurationDefaults": {
+      "files.associations": {
+        "*.yol": "yaml"
+      },
+      "yaml.schemas": {
+        "./schemas/yol.schema.json": "*.yol"
+      }
+    },
     "customEditors": [
       {
         "viewType": "olMaps.yolEditor",

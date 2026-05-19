@@ -28,10 +28,24 @@ class OLFileItem extends vscode.TreeItem {
 
 type OLTreeItem = WorkspaceFolderItem | OLFileItem;
 
-export class OLFilesProvider implements vscode.TreeDataProvider<OLTreeItem> {
+export class OLFilesProvider implements vscode.TreeDataProvider<OLTreeItem>, vscode.Disposable {
   private readonly onDidChangeTreeDataEmitter = new vscode.EventEmitter<OLTreeItem | undefined>();
-
   readonly onDidChangeTreeData = this.onDidChangeTreeDataEmitter.event;
+
+  private readonly yolWatcher: vscode.FileSystemWatcher;
+  private readonly watcherDisposables: vscode.Disposable[] = [];
+  private readonly workspaceFolderDisposable: vscode.Disposable;
+
+  constructor() {
+    this.yolWatcher = vscode.workspace.createFileSystemWatcher("**/*.yol");
+    this.watcherDisposables.push(
+      this.yolWatcher,
+      this.yolWatcher.onDidCreate(() => this.refresh()),
+      this.yolWatcher.onDidChange(() => this.refresh()),
+      this.yolWatcher.onDidDelete(() => this.refresh())
+    );
+    this.workspaceFolderDisposable = vscode.workspace.onDidChangeWorkspaceFolders(() => this.refresh());
+  }
 
   refresh(): void {
     this.onDidChangeTreeDataEmitter.fire(undefined);
@@ -62,5 +76,13 @@ export class OLFilesProvider implements vscode.TreeDataProvider<OLTreeItem> {
     const fileItems = files.map((fileUri) => new OLFileItem(fileUri, element.folder));
     fileItems.sort((a, b) => a.label!.toString().localeCompare(b.label!.toString()));
     return fileItems;
+  }
+
+  dispose(): void {
+    for (const d of this.watcherDisposables) {
+      d.dispose();
+    }
+    this.workspaceFolderDisposable.dispose();
+    this.onDidChangeTreeDataEmitter.dispose();
   }
 }

@@ -2,7 +2,7 @@ import * as vscode from "vscode";
 import { DocumentEditor } from "./documentEditor";
 import type { LayerModel, TileSourceModel, WebviewPayload } from "./olModel";
 
-type SourceType = "osm" | "xyz" | "wms";
+type SourceType = "osm" | "xyz" | "wms" | "wmts";
 
 type SourceInputHandler = () => Promise<TileSourceModel | undefined>;
 
@@ -56,6 +56,37 @@ const SOURCE_TYPE_OPTIONS: Record<SourceType, SourceTypeOption> = {
         url: serviceUrl,
         layers,
         tiled: true
+      };
+    }
+  },
+  wmts: {
+    label: "WMTS",
+    value: "wmts",
+    description: "OGC WMTS endpoint + layer + matrix set",
+    handler: async () => {
+      const serviceUrl = await promptServiceUrl("https://example.com/wmts");
+      if (!serviceUrl) {
+        return undefined;
+      }
+
+      const layer = await promptWmtsLayer();
+      if (!layer) {
+        return undefined;
+      }
+
+      const matrixSet = await promptWmtsMatrixSet();
+      if (!matrixSet) {
+        return undefined;
+      }
+
+      const tileMatrixPrefix = await promptWmtsTileMatrixPrefix();
+
+      return {
+        type: "wmts",
+        url: serviceUrl,
+        layer,
+        matrixSet,
+        ...(tileMatrixPrefix ? { tileMatrixPrefix } : {})
       };
     }
   }
@@ -128,6 +159,41 @@ async function promptWmsLayers(): Promise<string | undefined> {
   });
 
   return layers?.trim();
+}
+
+async function promptWmtsLayer(): Promise<string | undefined> {
+  const layer = await vscode.window.showInputBox({
+    title: "Add WMTS Layer",
+    prompt: "Enter WMTS LAYER value.",
+    placeHolder: "topo4",
+    ignoreFocusOut: true,
+    validateInput: (value) => (value.trim().length === 0 ? "WMTS layer is required." : undefined)
+  });
+
+  return layer?.trim();
+}
+
+async function promptWmtsMatrixSet(): Promise<string | undefined> {
+  const matrixSet = await vscode.window.showInputBox({
+    title: "Add WMTS Layer",
+    prompt: "Enter WMTS TILEMATRIXSET value.",
+    placeHolder: "EPSG:3857",
+    ignoreFocusOut: true,
+    validateInput: (value) => (value.trim().length === 0 ? "WMTS matrix set is required." : undefined)
+  });
+
+  return matrixSet?.trim();
+}
+
+async function promptWmtsTileMatrixPrefix(): Promise<string | undefined> {
+  const prefix = await vscode.window.showInputBox({
+    title: "Add WMTS Layer",
+    prompt: "Optional TILEMATRIX prefix. Leave empty to use numeric zoom levels.",
+    placeHolder: "EPSG:3857:",
+    ignoreFocusOut: true
+  });
+
+  return prefix?.trim();
 }
 
 async function applySourceToActiveDocument(

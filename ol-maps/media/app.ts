@@ -1,20 +1,23 @@
-import Map from "https://esm.sh/ol@9.2.4/Map";
-import View from "https://esm.sh/ol@9.2.4/View";
-import TileLayer from "https://esm.sh/ol@9.2.4/layer/Tile";
-import VectorLayer from "https://esm.sh/ol@9.2.4/layer/Vector";
-import OSM from "https://esm.sh/ol@9.2.4/source/OSM";
-import XYZ from "https://esm.sh/ol@9.2.4/source/XYZ";
-import TileWMS from "https://esm.sh/ol@9.2.4/source/TileWMS";
-import VectorSource from "https://esm.sh/ol@9.2.4/source/Vector";
-import GeoJSON from "https://esm.sh/ol@9.2.4/format/GeoJSON";
-import TopoJSON from "https://esm.sh/ol@9.2.4/format/TopoJSON";
-import KML from "https://esm.sh/ol@9.2.4/format/KML";
-import GML3 from "https://esm.sh/ol@9.2.4/format/GML3";
-import { register } from "https://esm.sh/ol@9.2.4/proj/proj4";
-import { addProjection, get as getProjection } from "https://esm.sh/ol@9.2.4/proj";
-import Projection from "https://esm.sh/ol@9.2.4/proj/Projection";
-import { defaults as defaultInteractions } from "https://esm.sh/ol@9.2.4/interaction/defaults";
+import Map from "https://esm.sh/ol@10.9.0/Map";
+import View from "https://esm.sh/ol@10.9.0/View";
+import TileLayer from "https://esm.sh/ol@10.9.0/layer/Tile";
+import VectorLayer from "https://esm.sh/ol@10.9.0/layer/Vector";
+import OSM from "https://esm.sh/ol@10.9.0/source/OSM";
+import XYZ from "https://esm.sh/ol@10.9.0/source/XYZ";
+import TileWMS from "https://esm.sh/ol@10.9.0/source/TileWMS";
+import WMTS from "https://esm.sh/ol@10.9.0/source/WMTS";
+import WMTSTileGrid from "https://esm.sh/ol@10.9.0/tilegrid/WMTS";
+import VectorSource from "https://esm.sh/ol@10.9.0/source/Vector";
+import GeoJSON from "https://esm.sh/ol@10.9.0/format/GeoJSON";
+import TopoJSON from "https://esm.sh/ol@10.9.0/format/TopoJSON";
+import KML from "https://esm.sh/ol@10.9.0/format/KML";
+import GML3 from "https://esm.sh/ol@10.9.0/format/GML3";
+import { register } from "https://esm.sh/ol@10.9.0/proj/proj4";
+import { addProjection, get as getProjection } from "https://esm.sh/ol@10.9.0/proj";
+import Projection from "https://esm.sh/ol@10.9.0/proj/Projection";
+import { defaults as defaultInteractions } from "https://esm.sh/ol@10.9.0/interaction/defaults";
 import proj4 from "https://esm.sh/proj4@2.12.1";
+import { getTopLeft, getWidth } from "https://esm.sh/ol@10.9.0/extent";
 
 type TileSourceModel =
   | { type: "osm" }
@@ -25,6 +28,16 @@ type TileSourceModel =
       layers: string;
       tiled?: boolean;
       format?: string;
+      attributions?: string | string[];
+    }
+  | {
+      type: "wmts";
+      url: string;
+      layer: string;
+      matrixSet: string;
+      style?: string;
+      format?: string;
+      tileMatrixPrefix?: string;
       attributions?: string | string[];
     };
 
@@ -105,10 +118,15 @@ type WebviewIncomingMessage =
       message: string;
     };
 
-type WebviewOutgoingMessage = {
-  type: "edit";
-  payload: ReplaceEdit | ReplaceEdit[];
-};
+type WebviewOutgoingMessage =
+  | {
+      type: "edit";
+      payload: ReplaceEdit | ReplaceEdit[];
+    }
+  | {
+      type: "debug";
+      message: string;
+    };
 
 type VsCodeApi = {
   postMessage(message: unknown): void;
@@ -182,6 +200,7 @@ function renderMap(model: OLMapModel): void {
   }
 
   const nextSignature = getMapStructureSignature(model);
+  const layerSummary = summarizeLayers(model.layers);
 
   if (mapInstance && mapStructureSignature === nextSignature) {
     const existingView = mapInstance.getView() as OlViewLike;
@@ -205,6 +224,13 @@ function renderMap(model: OLMapModel): void {
       if (!isSameViewState(currentView, nextView)) {
         existingView.setCenter(nextView.center);
         existingView.setZoom(nextView.zoom);
+        sendDebugMessage(
+          `Updated map view only: center=${nextView.center[0]},${nextView.center[1]} zoom=${nextView.zoom} projection=${model.view.projection || "EPSG:3857"} layers=${layerSummary}`
+        );
+      } else {
+        sendDebugMessage(
+          `Received model update with no view change: projection=${model.view.projection || "EPSG:3857"} layers=${layerSummary}`
+        );
       }
 
       lastCommittedViewState = nextView;
@@ -247,6 +273,9 @@ function renderMap(model: OLMapModel): void {
 
   mapInstance = nextMap as OlMapLike;
   mapStructureSignature = nextSignature;
+  sendDebugMessage(
+    `Rebuilt map: projection=${model.view.projection || "EPSG:3857"} center=${model.view.center[0]},${model.view.center[1]} zoom=${model.view.zoom} layers=${layerSummary}`
+  );
 
   const view = nextMap.getView() as OlViewLike;
   const scheduleViewSync = (): void => {
@@ -321,6 +350,14 @@ function sendEditPayload(payload: ReplaceEdit | ReplaceEdit[]): void {
     payload
   };
   vscode.postMessage(message);
+}
+
+function sendDebugMessage(message: string): void {
+  const debugMessage: WebviewOutgoingMessage = {
+    type: "debug",
+    message
+  };
+  vscode.postMessage(debugMessage);
 }
 
 function registerProjections(projections: ProjectionDefinition[]): void {
@@ -416,6 +453,46 @@ function createTileSource(source: TileSourceModel) {
     });
   }
 
+  if (source.type === "wmts") {
+    // const projection = getProjection("EPSG:3857");
+    // const projectionExtent = projection.getExtent();
+    // const size = getWidth(projectionExtent) / 256;
+
+    // const resolutions = Array.from({length: 22}, (_, z) =>
+    //   (projectionExtent[2] - projectionExtent[0]) / size / Math.pow(2, z)
+    // );
+    // const matrixIds = resolutions.map((_, z) => z.toString());
+
+    // const tileGrid = new WMTSTileGrid({
+    //   origin: getTopLeft(projectionExtent),
+    //   resolutions,
+    //   matrixIds,
+    // });
+    // return new WMTS({
+    //     url: source.url,
+    //     layer: source.layer,
+    //     matrixSet: source.matrixSet,
+    //     format: source.format ?? "image/png",
+    //     tileGrid: tileGrid,
+    //     style: 'default',
+    //     wrapX: true,
+    //   })
+    const wmtsUrl = new URL(source.url
+      + "?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0"
+      + `&LAYER=${source.layer}`
+      + `&STYLE=${source.style ?? "default"}`
+      + `&TILEMATRIXSET=${source.matrixSet}`
+      + "&TILEMATRIX={z}"
+      + "&TILEROW={y}"
+      + "&TILECOL={x}"
+      + `&FORMAT=${source.format ?? "image/png"}`
+    );
+    return new XYZ({
+      url: wmtsUrl.toString(),
+      attributions: source.attributions
+    });
+  }
+
   throw new Error(`Unsupported tile source type: ${String(source)}`);
 }
 
@@ -442,6 +519,14 @@ function getMapStructureSignature(model: OLMapModel): string {
     projection: model.view.projection ?? "EPSG:3857",
     layers: model.layers
   });
+}
+
+function summarizeLayers(layers: LayerModel[]): string {
+  if (layers.length === 0) {
+    return "0 (fallback osm)";
+  }
+
+  return layers.map((layer) => `${layer.type}:${layer.source.type}`).join(", ");
 }
 
 export {};

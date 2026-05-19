@@ -1,18 +1,22 @@
 export type TileSourceModel =
-  | {
-      type: "osm";
-    }
-  | {
-      type: "xyz";
-      url: string;
-      attributions?: string | string[];
-    }
+  | { type: "osm" }
+  | { type: "xyz"; url: string; attributions?: string | string[] }
   | {
       type: "wms";
       url: string;
       layers: string;
       tiled?: boolean;
       format?: string;
+      attributions?: string | string[];
+    }
+  | {
+      type: "wmts";
+      url: string;
+      layer: string;
+      matrixSet: string;
+      style?: string;
+      format?: string;
+      tileMatrixPrefix?: string;
       attributions?: string | string[];
     };
 
@@ -85,10 +89,19 @@ export type ReplaceEdit = {
 
 export type WebviewEdit = ReplaceEdit;
 
-export type WebviewInboundMessage = {
+export type WebviewDebugMessage = {
+  type: "debug";
+  message: string;
+};
+
+export type WebviewEditMessage = {
   type: "edit";
   payload: WebviewEdit | WebviewEdit[];
 };
+
+export type WebviewInboundMessage =
+  | WebviewEditMessage
+  | WebviewDebugMessage;
 
 export function toOLModel(parsed: unknown): OLMapModel {
   if (!isRecord(parsed)) {
@@ -225,11 +238,8 @@ function parseTileSource(sourceNode: Record<string, unknown>, layerIndex: number
       url
     };
 
-    const attributions = sourceNode.attributions;
-    if (
-      typeof attributions === "string" ||
-      (Array.isArray(attributions) && attributions.every((value) => typeof value === "string"))
-    ) {
+    const attributions = parseAttributions(sourceNode.attributions);
+    if (attributions !== undefined) {
       source.attributions = attributions;
     }
 
@@ -261,11 +271,51 @@ function parseTileSource(sourceNode: Record<string, unknown>, layerIndex: number
       source.format = sourceNode.format;
     }
 
-    const attributions = sourceNode.attributions;
-    if (
-      typeof attributions === "string" ||
-      (Array.isArray(attributions) && attributions.every((value) => typeof value === "string"))
-    ) {
+    const attributions = parseAttributions(sourceNode.attributions);
+    if (attributions !== undefined) {
+      source.attributions = attributions;
+    }
+
+    return source;
+  }
+
+  if (sourceNode.type === "wmts") {
+    const url = sourceNode.url;
+    if (typeof url !== "string" || url.trim().length === 0) {
+      throw new Error(`Layer at index ${layerIndex} uses wmts source but is missing a valid url.`);
+    }
+
+    const layer = sourceNode.layer;
+    if (typeof layer !== "string" || layer.trim().length === 0) {
+      throw new Error(`Layer at index ${layerIndex} uses wmts source but is missing a valid layer.`);
+    }
+
+    const matrixSet = sourceNode.matrixSet;
+    if (typeof matrixSet !== "string" || matrixSet.trim().length === 0) {
+      throw new Error(`Layer at index ${layerIndex} uses wmts source but is missing a valid matrixSet.`);
+    }
+
+    const source: TileSourceModel = {
+      type: "wmts",
+      url,
+      layer,
+      matrixSet
+    };
+
+    if (typeof sourceNode.style === "string" && sourceNode.style.trim().length > 0) {
+      source.style = sourceNode.style;
+    }
+
+    if (typeof sourceNode.format === "string" && sourceNode.format.trim().length > 0) {
+      source.format = sourceNode.format;
+    }
+
+    if (typeof sourceNode.tileMatrixPrefix === "string") {
+      source.tileMatrixPrefix = sourceNode.tileMatrixPrefix;
+    }
+
+    const attributions = parseAttributions(sourceNode.attributions);
+    if (attributions !== undefined) {
       source.attributions = attributions;
     }
 
@@ -275,6 +325,19 @@ function parseTileSource(sourceNode: Record<string, unknown>, layerIndex: number
   throw new Error(`Layer at index ${layerIndex} has unsupported source type: ${String(sourceNode.type)}.`);
 }
 
+function parseAttributions(value: unknown): string | string[] | undefined {
+  if (typeof value === "string") {
+    return value;
+  }
+
+  if (Array.isArray(value) && value.every((entry) => typeof entry === "string")) {
+    return value;
+  }
+
+  return undefined;
+}
+
+// https://cache.kartverket.no/v1/service?layer=topo&style=default&tilematrixset=utm33n&Service=WMTS&Request=GetTile&Version=1.0.0&Format=image%2Fpng&TileMatrix=10&TileCol=515&TileRow=368
 const VECTOR_SOURCE_TYPES = ["geojson", "topojson", "kml", "gml"] as const;
 type VectorSourceType = typeof VECTOR_SOURCE_TYPES[number];
 

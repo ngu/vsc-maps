@@ -1,0 +1,18 @@
+view:
+  center:
+    - 1161494.2062919126
+    - 9202672.19381307
+  zoom: 14.05338321398972
+  projection: EPSG:3857
+layers:
+  - type: tile
+    source:
+      type: wmts
+      url: https://cache.kartverket.no/v1/service
+      layer: topo
+      matrixSet: webmercator
+  - type: tile
+    source:
+      type: wms
+      url: https://geo.ngu.no/geoserver/nadag/wms
+      layers: cluster-grid-nadag
